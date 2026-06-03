@@ -1,12 +1,9 @@
 """
-Reconciliation Web Dashboard (Streamlit UI)
+Reconciliation Dashboard (Streamlit)
 
-The prompt requests: "...whatever you think would be useful for accountants... 
-or a lightweight web app." 
-
-Streamlit was selected to accomplish this because it allows us to deploy a reactive 
-dashboard with zero front-end boilerplate, directly wrapping our core Python calculations.
-It enables accountants to upload CSVs directly, and visualize the findings via interactive Plotly charts.
+I went with Streamlit here because it lets me wrap the Python reconciliation
+logic in a reactive web UI without writing any frontend code. Accountants
+can drag-and-drop their CSVs and immediately see where things went wrong.
 """
 import streamlit as st
 import pandas as pd
@@ -21,21 +18,23 @@ st.markdown("""
 Welcome to the reconciliation dashboard. 
 This tool compares internal transaction ledgers against bank statements. 
 
-**Approach:** Rather than alerting on every day a rolling balance is mismatched, this engine computes the **New Discrepancy Amount**. This isolates the specific day a mismatch originated, reducing noise from carry-over errors.
+**How it works:** Instead of flagging every day after an error (which just creates noise), 
+this engine computes the **New Discrepancy Amount** — isolating the specific day a 
+mismatch first appeared.
 """)
 
 # ---- SIDEBAR: FILE UPLOADS ----
 st.sidebar.header("Upload Files")
-st.sidebar.markdown("Upload your CSVs here. If nothing is uploaded, we'll use the sample data.")
+st.sidebar.markdown("Upload your CSVs here. If nothing is uploaded, we'll use the mismatch sample data to demo the discrepancy detection.")
 
 tx_file = st.sidebar.file_uploader("Transactions CSV", type=['csv'])
 bb_file = st.sidebar.file_uploader("Bank Balances CSV", type=['csv'])
 
-# Use uploaded files or fallback to the local sample files
-tx_source = tx_file if tx_file is not None else "data/sample_provided_tx.csv"
-bb_source = bb_file if bb_file is not None else "data/sample_provided_bb.csv"
+# Default to the mismatch sample so the demo actually shows something interesting
+tx_source = tx_file if tx_file is not None else "data/sample_mismatch_tx.csv"
+bb_source = bb_file if bb_file is not None else "data/sample_mismatch_bb.csv"
 
-# ---- RUN LOGIC (De-coupled from UI) ----
+# ---- RUN THE ENGINE ----
 try:
     results_list = reconcile(tx_source, bb_source)
     df = pd.DataFrame(results_list)
@@ -48,18 +47,19 @@ if df.empty:
     st.warning("No data found in the files.")
     st.stop()
 
-# ---- METRICS ----
-# Filter exclusively for the originating days to reduce noise
+# ---- SUMMARY METRICS ----
+# Only count days where a genuinely new discrepancy appeared (not carry-over noise).
+# Using 0.001 as threshold to avoid floating point dust after Decimal->float conversion.
 origin_discrepancies = df[df['new_discrepancy'].abs() > 0.001].copy()
 
 total_days_checked = len(df)
 number_of_bad_days = len(origin_discrepancies)
-final_gap = df['cumulative_discrepancy'].iloc[-1] if 'cumulative_discrepancy' in df.columns else 0
+final_gap = df['cumulative_discrepancy'].fillna(0).iloc[-1]
 
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Days Reconciled", total_days_checked)
-col2.metric("Originating Discrepancies", number_of_bad_days, help="Days where a BRAND NEW math discrepancy occurred.")
+col2.metric("Originating Discrepancies", number_of_bad_days, help="Days where a brand new math discrepancy appeared (not carry-over).")
 
 delta_text = "Urgent Action Required" if abs(final_gap) > 0.01 else "All Good"
 delta_color_option = "inverse" if abs(final_gap) > 0.01 else "normal"
@@ -68,14 +68,12 @@ col3.metric("Final Outstanding Gap", f"${final_gap:,.2f}",
             delta=delta_text, 
             delta_color=delta_color_option)
 
-# ---- VISUALIZATION ----
+# ---- CHART ----
 st.markdown("### Expected vs Actual Balance Trend")
-st.markdown("Notice how a single discrepancy causes the two lines to diverge permanently unless corrected. (Hover over points for details).")
+st.markdown("A single discrepancy causes the two lines to diverge permanently unless corrected. Hover over points for details.")
 
-# Interactive graph showing the continuous trend against the reported milestones
 fig = go.Figure()
 
-# Expected Line (Internal Ledger calculations)
 fig.add_trace(go.Scatter(
     x=df['date'], y=df['expected_balance'],
     mode='lines+markers',
@@ -83,7 +81,6 @@ fig.add_trace(go.Scatter(
     line=dict(color='blue')
 ))
 
-# Actual Line (Bank Report)
 fig.add_trace(go.Scatter(
     x=df['date'], y=df['actual_balance'],
     mode='lines+markers',
@@ -91,7 +88,7 @@ fig.add_trace(go.Scatter(
     line=dict(color='orange', dash='dot')
 ))
 
-# Specifically highlight the exact coordinates where the math broke down
+# Big red X markers on the days where things actually went wrong
 if not origin_discrepancies.empty:
     fig.add_trace(go.Scatter(
         x=origin_discrepancies['date'], 
@@ -109,11 +106,11 @@ st.markdown("### Required Accounting Interventions")
 if origin_discrepancies.empty:
     st.success("All balances line up perfectly. No new discrepancies found.")
 else:
-    st.error(f"Action required on {number_of_bad_days} specific days. Please investigate your logs for these dates.")
+    st.error(f"Action required on {number_of_bad_days} specific days. Investigate your logs for these dates.")
     
     display_df = origin_discrepancies[['date', 'transaction_total', 'expected_balance', 'actual_balance', 'new_discrepancy']].copy()
     
-    # Format currency logic strictly for front-end presentation 
+    # Format for display only
     display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
     for col in ['transaction_total', 'expected_balance', 'actual_balance', 'new_discrepancy']:
         display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}" if pd.notnull(x) else "N/A")
