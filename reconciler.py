@@ -1,18 +1,6 @@
 """
-Reconciliation Engine
-
-Core logic for comparing daily transaction totals against reported bank balances.
-
-A few decisions worth calling out:
-- I used Python's `Decimal` type instead of float for all money math. This avoids
-  the classic 0.1 + 0.2 != 0.3 floating point issue that would cause false mismatches.
-- If a date has no bank statement (weekends, holidays), I just carry the expected
-  balance forward and skip the comparison. The timeline stays continuous.
-- Multiple transactions on the same day get summed together before comparison.
-- The key insight: when a discrepancy happens on Day X, every day after it will
-  also show a mismatch. That's just noise. So I track the "new discrepancy" —
-  the delta between today's gap and yesterday's gap — to isolate exactly when
-  things went wrong.
+Reconciliation engine — compares transaction totals against bank balances.
+See implementation_and_test_plan.md for the full design rationale.
 """
 import csv
 import io
@@ -20,10 +8,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 def parse_csv_stream(file_stream):
-    """
-    Reads CSV data from either a file path (string) or an in-memory stream
-    (like what Streamlit gives us on file upload). Returns a list of dicts.
-    """
+    """Reads CSV from a file path or in-memory stream. Returns list of dicts."""
     if hasattr(file_stream, 'read'):
         content = file_stream.read()
         if isinstance(content, bytes):
@@ -38,21 +23,9 @@ def parse_csv_stream(file_stream):
 
 def reconcile(transactions_source, balances_source):
     """
-    Main reconciliation function. Takes two CSV sources (paths or streams),
-    walks through every day in the range, and compares what we expect the
-    balance to be vs what the bank actually reported.
-
-    Returns a list of daily records. Each record includes:
-    - expected_balance: running sum of all transactions up to that day
-    - actual_balance: what the bank said (None if no statement that day)
-    - cumulative_discrepancy: total gap between expected and actual
-    - new_discrepancy: how much of that gap is NEW today (the useful part)
-
-    Note on the float conversion at the end: I do all the math in Decimal
-    for precision, but convert to float in the output dict. This is because
-    pandas/plotly/streamlit all expect regular floats, and by this point
-    the precision-sensitive calculations are done. The conversion happens
-    once, at the boundary, not during arithmetic.
+    Walks through every day in the date range and compares expected vs actual balance.
+    Uses Decimal internally for precision, converts to float at the output boundary
+    since pandas/plotly expect it (all precision-sensitive math is already done by then).
     """
     tx_data = parse_csv_stream(transactions_source)
     bb_data = parse_csv_stream(balances_source)

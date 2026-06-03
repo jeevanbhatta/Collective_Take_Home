@@ -19,7 +19,7 @@ Welcome to the reconciliation dashboard.
 This tool compares internal transaction ledgers against bank statements. 
 
 **How it works:** Instead of flagging every day after an error (which just creates noise), 
-this engine computes the **New Discrepancy Amount** — isolating the specific day a 
+this engine computes the **New Discrepancy Amount**, isolating the specific day a 
 mismatch first appeared.
 """)
 
