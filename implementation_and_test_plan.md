@@ -1,38 +1,13 @@
-# Reconciliation Execution & Test Plan
+# Reconciliation — How I Approached It
 
-## Overview
-This document outlines the architecture, execution plan, and testing criteria for the Reconciliation Assessment.
+This doc walks through my thinking on the architecture, the key decisions, and what I tested.
 
-## 1. Data Ingestion & Parsing
-**Task:** Read streams from either direct CSV file paths or bytes streams (via Streamlit uploads).
-**Test Focus:**
-- Application successfully loads out-of-order date strings and correctly maps types (using `Decimal` for precision).
-- Handles grouping overlapping transactions that occur on the exact same date.
+**Data Ingestion & Parsing** — Reads CSVs from either file paths or in-memory streams (Streamlit gives us byte streams on upload, not file paths). I tested that out-of-order dates get handled correctly, multiple transactions on the same day get summed together, and all money values go through `Decimal` to avoid float precision issues.
 
-## 2. Core Reconciliation Logic & "Noise Reduction"
-**Task:** Identify whether the expected running total matches the bank statement.
-**Critical Decision:** A standard engine will flag `Expected - Actual != 0`. However, if an error happens on Monday, the variance will carry over to Tuesday, Wednesday, etc. This creates extreme alert fatigue. 
-Instead, our engine calculates the `New Discrepancy Amount` (the change in variance between two days). This isolates the exact calendar day where the math drift originated.
-**Test Focus:**
-- Verify days that carry existing variance but introduce no *new* mathematical drift return `new_discrepancy = 0`.
-- Only the "Originating Discrepancy" day should log a non-zero alert.
+**The "New Discrepancy" Idea** — A naive comparison flags `Expected - Actual != 0` for every day. But if an error happens on Monday, Tuesday through Friday will all show mismatches too — even though nothing new went wrong. That's a lot of noise for an accounting team. So I track the *change* in discrepancy between consecutive days. If today's gap is the same as yesterday's, the `new_discrepancy` is 0 — meaning the error is just carrying forward. Only the day where the gap actually *grew* gets flagged. I tested that carry-over days return `new_discrepancy = 0`, only the originating day gets a non-zero alert, and the mismatch sample data correctly identifies two separate error origins.
 
-## 3. Edge Case Handling
-**Task:** Accommodate irregular financial edge cases.
-**Test Focus:**
-- **Missing Dates (Weekends):** Transactions occur on Sat/Sun, but bank only reports on Friday and Monday. The script must explicitly iterate through blind spots, carrying balances over cleanly.
-- **Precision:** $0.10 + $0.20 must strictly equal $0.30 (no standard default float behavior like `0.30000004`).
-- **Out of Order Data:** System is agnostic to row ordering inside the CSV.
+**Edge Cases** — Missing dates (weekends/holidays): bank doesn't report on Sat/Sun, but transactions still happen. I iterate through every calendar day and carry balances forward so the timeline stays continuous. Float precision: `$0.10 + $0.20` must equal `$0.30`, not `$0.30000000000000004`. Using `Decimal` handles this. Out-of-order data: CSVs aren't always sorted. The engine doesn't assume they are.
 
-## 4. Reporting & Visualization (Web Dashboard)
-**Task:** Provide accountants with an easy-to-read, zero-code interface.
-**Execution:** We implemented a Python `Streamlit` application. 
-- It isolates the underlying Core Engine from the UX. 
-- It allows accountants to drag-and-drop CSVs.
-- Uses `Plotly` to display an interactive line-chart rendering Expected vs Actual timelines, placing a giant Red 'X' solely on days where a _new_ mismatch is generated.
+**Dashboard** — I went with Streamlit because it lets me wrap the Python engine in a web UI without writing frontend code. Accountants can upload their own CSVs and see results immediately. It shows summary metrics (how many days checked, how many originating errors, final outstanding gap), an interactive line chart (expected vs actual, with red X markers on error-origin days), and an action table listing only the days that need investigation.
 
-## 5. Documentation & Packaging
-**Task:** Provide peer-review quality commentary and strict execution commands.
-**Execution:** 
-- A standard Unix `Makefile` abstracts setup processes (`make install`, `make run`, `make test`).
-- A `package_submission.sh` script to properly compile the required ZIP file automatically.
+**Packaging** — `Makefile` handles setup (`make install`), running (`make run`), and testing (`make test`). `package_submission.sh` builds the submission zip. Dependencies are pinned in `requirements.txt`.

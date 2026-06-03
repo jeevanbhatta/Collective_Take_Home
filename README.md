@@ -1,13 +1,18 @@
 # Automated Reconciliation Dashboard
 
-This repository provides a tool to reconcile expected daily running balances (from a transactions ledger) against externally reported daily bank balances.
+This tool reconciles expected daily running balances (from a transactions ledger) against externally reported bank balances.
 
-See the live app on [Streamlit](https://recon-engine.streamlit.app/)
+## The Idea
+When a balance discrepancy happens on a given day, every day after it will also show a mismatch — even if nothing new went wrong. A basic comparison would flag all of those as errors, which creates a lot of noise.
 
-## Approach
-When a balance discrepancy occurs on a given day, subsequent days will also show a mismatch if the error is not corrected. A standard comparison script would flag all subsequent days as errors, creating noise.
+Instead, this engine calculates the **New Discrepancy Amount**. It isolates the specific day a divergence was introduced, so the accounting team can go straight to the source of the problem without wading through carry-over noise.
 
-This engine calculates the **New Discrepancy Amount**. It isolates the specific day a mathematical divergence is introduced, ignoring days where a previous error simply carried over. This helps accountants pinpoint the exact date an error occurred without having to filter through carry-over variances.
+## Sample Data
+The repo includes two sets of sample data:
+- `sample_provided_*` — the original data from the prompt (reconciles cleanly)
+- `sample_mismatch_*` — same transactions, but with two deliberate bank errors ($50 gap on 06-03, additional $5 gap on 06-10) to demonstrate discrepancy isolation
+
+The dashboard defaults to the mismatch data so you can see the feature in action.
 
 ---
 
@@ -20,7 +25,7 @@ This engine calculates the **New Discrepancy Amount**. It isolates the specific 
 ### Commands (via Makefile)
 
 **1. Install Dependencies**
-Sets up the virtual environment and installs required packages (pandas, matplotlib, streamlit, plotly).
+Sets up the virtual environment and installs required packages.
 ```bash
 make install
 ```
@@ -32,13 +37,13 @@ make run
 ```
 
 **3. Run Tests**
-Executes the test suite for the core reconciliation logic, including edge cases like missing days and floating point precision.
+Runs the test suite, including edge cases like missing days, floating point precision, and discrepancy isolation.
 ```bash
 make test
 ```
 
 **4. Package for Submission**
-Cleans up temporary files and builds the final zip file.
+Cleans up temp files and builds the final zip.
 ```bash
 make package
 ```
