@@ -2,6 +2,8 @@
 
 This repository provides a tool to reconcile expected daily running balances (from a transactions ledger) against externally reported daily bank balances.
 
+See the live app on [Streamlit](https://recon-engine.streamlit.app/)
+
 ## Approach
 When a balance discrepancy occurs on a given day, subsequent days will also show a mismatch if the error is not corrected. A standard comparison script would flag all subsequent days as errors, creating noise.
 
